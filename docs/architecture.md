@@ -69,27 +69,25 @@ Reads are synchronous against an in-memory sql.js database. Only `load` and
 `load` GETs the file (a 404 is the normal first-run state, not an error) and
 `flush` PUTs the exported bytes back with the blob `sha` it last saw.
 
-### Two devices don't clobber each other
+### Conflicts are reported, not resolved
 
-A SQLite file is an opaque binary blob. Git cannot merge it, so a naive
-last-write-wins push would silently discard whatever the other device did.
+Sending the `sha` means GitHub rejects the write if anything else changed the
+file since it loaded, so a concurrent edit can never be silently overwritten.
 
-Instead every mutation is recorded twice: applied to the in-memory database,
-and appended to a pending-operation log. On a `sha` conflict the store
-re-downloads whatever is now on the remote, replays **only its own pending
-operations** on top, and pushes that. The data is append-mostly — new
-sentences, new reviews, card state keyed by id — so replaying converges.
+That is the whole conflict story. There is no merge, no operation log, no
+replay. A SQLite file is an opaque blob git cannot merge, and this is a
+single-person app where two devices writing between syncs is rare — so the
+cost of that machinery outweighed what it bought.
 
-Both paths call the same `applyOp`, so a merge can never diverge from what a
-normal write would have done.
-
-Replays are idempotent: reviews carry a client-generated `client_id` with a
-unique index, so a push that landed but whose response was lost re-inserts the
-same rows and the index drops them.
+On a conflict the store raises `ConflictError` and changes nothing: the push
+did not land, so local work stays in memory and stays dirty. The user picks —
+retry, or reload and adopt the remote. Reloading discards local changes, which
+is why it is a prompt rather than something the app does on its own.
 
 Writes are debounced ~8s and flushed on `pagehide`/`visibilitychange`, so a
-session becomes a few commits rather than one per answer. `pagehide` is the
-one that actually fires on iOS.
+session becomes a few commits rather than one per answer, and the window in
+which a conflict is possible stays small. `pagehide` is the one that actually
+fires on iOS.
 
 ## Audio is never stored
 
@@ -121,9 +119,9 @@ token. `src/ui/config.js` is the only module that touches them.
 
 ## Testing
 
-- `npm test` — 72 tests, no browser. Schedulers (including a contract suite
+- `npm test` — 71 tests, no browser. Schedulers (including a contract suite
   every registered scheduler must pass), the SQLite layer, the Contents API
-  client against a fake that enforces `sha` checking, multi-device merges, the
+  client against a fake that enforces `sha` checking, conflict reporting, the
   session loop, the ElevenLabs adapter, and credential parsing.
 - `npm run e2e` — the real UI in a phone-sized browser with both APIs
   intercepted at the network layer. Everything below `fetch` is real: sql.js,

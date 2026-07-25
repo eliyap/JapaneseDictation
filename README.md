@@ -126,12 +126,12 @@ The app surfaces both of these as plain-language errors rather than a bare 401.
 
 ```bash
 npm install
-npm test                 # 72 tests, no browser needed
+npm test                 # 71 tests, no browser needed
 npm run serve            # then, in another terminal:
 npm run e2e              # real UI, phone viewport, APIs intercepted
 ```
 
 `PW_CHROMIUM=/path/to/chrome` uses an existing browser instead of Playwright's.
 
-Layout, the module boundaries, and the multi-device merge design are in
+Layout, the module boundaries, and the sync design are in
 [docs/architecture.md](docs/architecture.md).

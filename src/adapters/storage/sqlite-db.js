@@ -149,13 +149,12 @@ export class SqliteDb {
   // --- reviews ------------------------------------------------------------
 
   /** @param {ReviewInput} review */
-  logReview(sentenceId, review, schedulerId, clientId) {
+  logReview(sentenceId, review, schedulerId) {
     this.db.run(
-      `INSERT OR IGNORE INTO reviews
-         (client_id, sentence_id, reviewed_at, correct, speed, scheduler, elapsed_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO reviews
+         (sentence_id, reviewed_at, correct, speed, scheduler, elapsed_ms)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
-        clientId,
         sentenceId,
         review.at,
         review.correct ? 1 : 0,

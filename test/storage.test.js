@@ -78,7 +78,7 @@ test("deleting a sentence removes its card but keeps its review history", async 
   const db = await openDb();
   db.upsertSentence(sentence("s1", "x"));
   db.putCard("s1", "sm2", cardState());
-  db.logReview("s1", review(), "sm2", "c1");
+  db.logReview("s1", review(), "sm2");
   db.deleteSentence("s1");
 
   assert.equal(db.listSentences().length, 0);
@@ -87,12 +87,13 @@ test("deleting a sentence removes its card but keeps its review history", async 
   db.close();
 });
 
-test("reviews are idempotent on client id", async () => {
+test("reviews append", async () => {
   const db = await openDb();
   db.upsertSentence(sentence("s1", "x"));
-  db.logReview("s1", review(), "sm2", "same-id");
-  db.logReview("s1", review(), "sm2", "same-id");
-  assert.equal(db.countReviews(), 1, "a replayed write must not duplicate");
+  db.logReview("s1", review({ at: T0 }), "sm2");
+  db.logReview("s1", review({ at: T0 + 1, correct: false }), "sm2");
+  assert.equal(db.countReviews(), 2);
+  assert.deepEqual(db.listReviews("s1").map((r) => r.correct), [true, false]);
   db.close();
 });
 
@@ -169,10 +170,8 @@ test("a second device sees what the first one wrote", async () => {
   assert.equal(b.listSentences()[0].text, "一");
 });
 
-test("a concurrent remote change is merged, not clobbered", async () => {
+test("a concurrent remote change is reported, never silently overwritten", async () => {
   const gh = fakeGitHub();
-
-  // Device A loads and starts working.
   const a = makeStore(gh);
   await a.load();
   a.upsertSentence(sentence("a1", "Aの文"));
@@ -180,28 +179,20 @@ test("a concurrent remote change is merged, not clobbered", async () => {
 
   const b = makeStore(gh);
   await b.load();
-
-  // Both devices now make changes without seeing each other's.
   b.upsertSentence(sentence("b1", "Bの文"));
-  b.logReview("a1", review({ at: T0 + 1 }), "sm2");
 
-  await remoteWrite(gh, PATH, (db) => {
-    db.upsertSentence(sentence("a2", "Aの新しい文"));
-    db.logReview("a1", { ...review({ at: T0 + 2 }), correct: false }, "sm2", "remote-review");
-  });
+  // Another device pushes first.
+  await remoteWrite(gh, PATH, (db) => db.upsertSentence(sentence("a2", "Aの新しい文")));
 
-  const res = await b.flush();
-  assert.equal(res.merged, true, "the conflict was rebased, not force-pushed");
+  await assert.rejects(() => b.flush(), /changed somewhere else/);
 
-  // Everything from both sides survives.
+  // The remote is untouched -- the losing write did not land.
   const final = makeStore(gh);
   await final.load();
-  const ids = final.listSentences().map((s) => s.id).sort();
-  assert.deepEqual(ids, ["a1", "a2", "b1"]);
-  assert.equal(final.listReviews().length, 2, "both review logs are present");
+  assert.deepEqual(final.listSentences().map((s) => s.id).sort(), ["a1", "a2"]);
 });
 
-test("a merge leaves the store clean and usable", async () => {
+test("after a conflict the local changes are still there to retry or abandon", async () => {
   const gh = fakeGitHub();
   const a = makeStore(gh);
   await a.load();
@@ -212,32 +203,15 @@ test("a merge leaves the store clean and usable", async () => {
   await b.load();
   b.upsertSentence(sentence("s2", "y"));
   await remoteWrite(gh, PATH, (db) => db.upsertSentence(sentence("s3", "z")));
-  await b.flush();
 
-  assert.equal(b.isDirty(), false);
-  assert.equal(b.pendingCount(), 0);
-  // The in-memory database was swapped for the merged one, so reads are fresh.
-  assert.deepEqual(b.listSentences().map((s) => s.id).sort(), ["s1", "s2", "s3"]);
-});
+  await assert.rejects(() => b.flush());
+  assert.equal(b.isDirty(), true, "nothing was written, so it stays unsaved");
+  assert.ok(b.listSentences().some((s) => s.id === "s2"), "local work is not discarded");
 
-test("card state written before a merge survives it", async () => {
-  const gh = fakeGitHub();
-  const a = makeStore(gh);
-  await a.load();
-  a.upsertSentence(sentence("s1", "x"));
-  await a.flush();
-
-  const b = makeStore(gh);
+  // Reloading adopts the remote and drops the local edit -- the user's call.
   await b.load();
-  b.putCard("s1", "sm2", cardState({ streak: 4, speed: 1.0, algo: { ease: 2.9 } }));
-  await remoteWrite(gh, PATH, (db) => db.upsertSentence(sentence("other", "y")));
-  await b.flush();
-
-  const final = makeStore(gh);
-  await final.load();
-  const c = final.getCard("s1");
-  assert.equal(c.streak, 4);
-  assert.equal(c.algo.ease, 2.9);
+  assert.equal(b.isDirty(), false);
+  assert.deepEqual(b.listSentences().map((s) => s.id).sort(), ["s1", "s3"]);
 });
 
 test("reads before load fail loudly", async () => {

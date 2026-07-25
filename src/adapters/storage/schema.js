@@ -38,10 +38,6 @@ export const MIGRATIONS = [
   -- it is captured from the first review even though nothing reads it yet.
   CREATE TABLE IF NOT EXISTS reviews (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    -- Client-generated, unique. Makes replaying an unacknowledged write
-    -- idempotent: if a push landed but the response was lost, the retry
-    -- re-inserts the same rows and the index drops them.
-    client_id   TEXT    NOT NULL UNIQUE,
     sentence_id TEXT    NOT NULL,
     reviewed_at INTEGER NOT NULL,
     correct     INTEGER NOT NULL,

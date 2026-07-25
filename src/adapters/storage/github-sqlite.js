@@ -5,25 +5,32 @@ import { ContentsApi } from "../github/contents-api.js";
 
 // Store backed by a SQLite file committed to a GitHub repo.
 //
-// Reads are synchronous against an in-memory database. Writes mutate that
-// database AND append to a pending-operation log; `flush` pushes the exported
-// bytes back through the Contents API.
+// Reads are synchronous against an in-memory database; only `load` and `flush`
+// touch the network. `flush` sends the whole file with the blob sha it last
+// saw, so GitHub rejects the write if anything else changed it in the meantime.
 //
-// The operation log is what makes two devices safe. A SQLite file is an opaque
-// binary blob, so git cannot merge it and a naive last-write-wins push would
-// silently discard whatever the other device did. Instead, on a sha conflict
-// we re-download whatever is now on the remote, replay only our own pending
-// operations on top, and push that. Since the data is append-mostly (new
-// sentences, new reviews, card state keyed by id) replaying converges rather
-// than clobbering.
+// There is no merge or replay machinery here on purpose. A SQLite file is an
+// opaque blob that git cannot merge, and this is a single-person app where two
+// devices writing between syncs is rare. A conflict is therefore reported
+// rather than resolved: local changes stay in memory and dirty, so you can
+// retry or reload and decide for yourself.
 
 const DEFAULT_PATH = "data/dictation.sqlite";
+
+export class ConflictError extends Error {
+  constructor() {
+    super(
+      "This database was changed somewhere else since it loaded. " +
+      "Reload to pick up those changes — anything answered since the last sync will be lost.",
+    );
+    this.name = "ConflictError";
+  }
+}
 
 export class GitHubSqliteStore {
   #db = null;
   #api = null;
   #sha = null;
-  #pending = [];
   #dirty = false;
   #path = DEFAULT_PATH;
 
@@ -47,18 +54,14 @@ export class GitHubSqliteStore {
     return this.#dirty;
   }
 
-  pendingCount() {
-    return this.#pending.length;
-  }
-
   // --- lifecycle ----------------------------------------------------------
 
   async load() {
     this.onStatus({ state: "loading" });
     const found = await this.#api.getFile(this.#path);
+    this.#db?.close();
     this.#db = await SqliteDb.open(found?.bytes ?? null, this.sqlOpts);
     this.#sha = found?.sha ?? null;
-    this.#pending = [];
     this.#dirty = false;
     this.onStatus({ state: found ? "loaded" : "created" });
     return { existed: Boolean(found) };
@@ -69,144 +72,85 @@ export class GitHubSqliteStore {
     if (!this.#dirty || !this.#db) return { pushed: false };
     this.onStatus({ state: "saving" });
 
-    const ops = this.#pending.slice();
-    const msg = message ?? `Review session — ${ops.length} change${ops.length === 1 ? "" : "s"}`;
-
     try {
       const res = await this.#api.putFile(this.#path, this.#db.export(), {
         sha: this.#sha,
-        message: msg,
+        message: message ?? "Update dictation progress",
       });
       this.#sha = res.sha;
-      this.#pending = [];
       this.#dirty = false;
       this.onStatus({ state: "saved" });
-      return { pushed: true, merged: false, commit: res.commit };
+      return { pushed: true, commit: res.commit };
     } catch (e) {
-      if (!e?.isConflict) {
-        this.onStatus({ state: "error", detail: e.message });
-        throw e;
+      // Stay dirty either way: nothing was written, so the local changes are
+      // still the only copy.
+      if (e?.isConflict) {
+        this.onStatus({ state: "conflict" });
+        throw new ConflictError();
       }
-      // Someone else pushed since we loaded. Rebase our operations onto theirs.
-      this.onStatus({ state: "merging" });
-      const res = await this.#rebaseAndPush(ops, msg);
-      this.onStatus({ state: "saved", detail: "merged with remote changes" });
-      return res;
+      this.onStatus({ state: "error", detail: e.message });
+      throw e;
     }
   }
 
-  async #rebaseAndPush(ops, message) {
-    const remote = await this.#api.getFile(this.#path);
-    const rebased = await SqliteDb.open(remote?.bytes ?? null, this.sqlOpts);
-
-    for (const op of ops) applyOp(rebased, op);
-
-    const res = await this.#api.putFile(this.#path, rebased.export(), {
-      sha: remote?.sha ?? null,
-      message: `${message} (merged)`,
-    });
-
-    this.#db?.close();
-    this.#db = rebased;
-    this.#sha = res.sha;
-    this.#pending = [];
-    this.#dirty = false;
-    return { pushed: true, merged: true, commit: res.commit };
-  }
-
-  #record(op) {
-    applyOp(this.#db, op);
-    this.#pending.push(op);
+  #touch() {
+    if (!this.#db) throw new Error("Store has not been loaded yet");
     this.#dirty = true;
   }
 
-  #assertLoaded() {
+  #read() {
     if (!this.#db) throw new Error("Store has not been loaded yet");
+    return this.#db;
   }
 
   // --- Store interface ----------------------------------------------------
 
   listSentences() {
-    this.#assertLoaded();
-    return this.#db.listSentences();
+    return this.#read().listSentences();
   }
 
   /** @param {Sentence} s */
   upsertSentence(s) {
-    this.#assertLoaded();
-    this.#record({ kind: "upsertSentence", payload: { ...s } });
+    this.#touch();
+    this.#db.upsertSentence(s);
   }
 
   deleteSentence(id) {
-    this.#assertLoaded();
-    this.#record({ kind: "deleteSentence", payload: id });
+    this.#touch();
+    this.#db.deleteSentence(id);
   }
 
   getCard(id) {
-    this.#assertLoaded();
-    return this.#db.getCard(id);
+    return this.#read().getCard(id);
   }
 
   /** @param {CardState} state */
   putCard(id, schedulerId, state) {
-    this.#assertLoaded();
-    this.#record({ kind: "putCard", payload: { id, schedulerId, state } });
+    this.#touch();
+    this.#db.putCard(id, schedulerId, state);
   }
 
   /** @param {ReviewInput} review */
   logReview(sentenceId, review, schedulerId) {
-    this.#assertLoaded();
-    this.#record({
-      kind: "logReview",
-      payload: { sentenceId, review, schedulerId, clientId: newId() },
-    });
+    this.#touch();
+    this.#db.logReview(sentenceId, review, schedulerId);
   }
 
   listReviews(sentenceId = null) {
-    this.#assertLoaded();
-    return this.#db.listReviews(sentenceId);
+    return this.#read().listReviews(sentenceId);
   }
 
   getSetting(key) {
-    this.#assertLoaded();
-    return this.#db.getSetting(key);
+    return this.#read().getSetting(key);
   }
 
   setSetting(key, value) {
-    this.#assertLoaded();
-    this.#record({ kind: "setSetting", payload: { key, value } });
+    this.#touch();
+    this.#db.setSetting(key, value);
   }
 
   countReviews() {
-    this.#assertLoaded();
-    return this.#db.countReviews();
-  }
-}
-
-/**
- * Apply one operation to a database. Shared by the live path and the rebase
- * path, so a merge can never diverge from what a normal write would have done.
- * @param {SqliteDb} db
- */
-export function applyOp(db, op) {
-  switch (op.kind) {
-    case "upsertSentence":
-      return db.upsertSentence(op.payload);
-    case "deleteSentence":
-      return db.deleteSentence(op.payload);
-    case "putCard":
-      return db.putCard(op.payload.id, op.payload.schedulerId, op.payload.state);
-    case "logReview":
-      return db.logReview(
-        op.payload.sentenceId,
-        op.payload.review,
-        op.payload.schedulerId,
-        op.payload.clientId,
-      );
-    case "setSetting":
-      return db.setSetting(op.payload.key, op.payload.value);
-    default:
-      throw new Error(`Unknown operation "${op.kind}"`);
+    return this.#read().countReviews();
   }
 }
 

@@ -537,10 +537,17 @@ async function flush({ manual = false } = {}) {
   }
   try {
     const res = await app.store.flush();
-    if (res.pushed) setSync(res.merged ? "synced (merged)" : "synced");
-    if (manual) toast(res.merged ? "Synced — merged with remote" : "Synced");
+    if (res.pushed) setSync("synced");
+    if (manual) toast("Synced");
     updateDataStats();
   } catch (e) {
+    if (e.name === "ConflictError") {
+      setSync("conflict", "err");
+      // Local changes are still in memory and still dirty, so reloading is a
+      // real choice rather than the only option.
+      if (confirm(`${e.message}\n\nReload now?`)) location.reload();
+      return;
+    }
     setSync("save failed", "err");
     toast(e.message, { error: true, ms: 6000 });
   }
