@@ -2,5 +2,6 @@ node_modules/
 package-lock.json
 .DS_Store
 
-# Generated audio IS meant to be committed -- it is what GitHub Pages serves.
-# Nothing under audio/ is ignored on purpose.
+# The synced database is created by the app through the GitHub API, not by a
+# developer. Ignoring it locally avoids committing a stale copy by hand.
+data/*.sqlite
