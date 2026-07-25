@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Japanese Dictation</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎧</text></svg>">
+</head>
+<body>
+
+<header class="bar">
+  <h1>聴き取り <span class="sub">dictation</span></h1>
+  <div class="stats" id="stats"></div>
+  <button id="menuBtn" class="ghost" aria-expanded="false" aria-controls="menu">Deck</button>
+</header>
+
+<dialog id="menu">
+  <h2>Deck</h2>
+  <p class="muted" id="menuStats"></p>
+  <div class="row">
+    <button id="exportBtn" class="ghost">Export progress</button>
+    <button id="importBtn" class="ghost">Import progress</button>
+    <button id="resetBtn" class="danger">Reset all progress</button>
+  </div>
+  <textarea id="ioBox" rows="8" spellcheck="false" placeholder="Progress JSON appears here on export; paste here and press Import."></textarea>
+  <div class="row end"><button id="closeMenu">Close</button></div>
+</dialog>
+
+<main>
+  <section id="card" class="card" hidden>
+    <div class="speedrow">
+      <div class="speed" id="speedLabel">80%</div>
+      <div class="track" aria-hidden="true"><div class="fill" id="speedFill"></div></div>
+      <div class="streak" id="streakLabel"></div>
+    </div>
+
+    <button id="playBtn" class="play">
+      <span class="glyph">▶</span>
+      <span class="label">Play</span>
+      <kbd>space</kbd>
+    </button>
+    <p class="muted src" id="srcNote"></p>
+
+    <textarea id="answer" rows="3" lang="ja" autocomplete="off" autocapitalize="off"
+              spellcheck="false" placeholder="Type what you hear…"></textarea>
+
+    <div class="row">
+      <button id="checkBtn" class="primary">Check <kbd>⏎</kbd></button>
+      <button id="skipBtn" class="ghost">Reveal</button>
+    </div>
+
+    <div id="reveal" class="reveal" hidden>
+      <div class="verdict" id="verdict"></div>
+      <div class="target" id="target"></div>
+      <div class="diff" id="diff"></div>
+      <p class="legend muted" id="legend" hidden>
+        <span class="del">green</span> = you missed it ·
+        <span class="add">struck</span> = you added it
+      </p>
+      <div class="translation muted" id="translation"></div>
+      <div class="row">
+        <button id="nextBtn" class="primary">Next <kbd>⏎</kbd></button>
+        <button id="overrideBtn" class="ghost"></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="done" class="card done" hidden>
+    <h2>Deck cleared 🎉</h2>
+    <p class="muted">Every sentence hit five in a row. Add more sentences to
+       <code>data/deck.json</code>, or reset progress from the Deck menu.</p>
+  </section>
+
+  <p id="error" class="error" hidden></p>
+</main>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+:root {
+  --bg: #12131a;
+  --panel: #1c1e28;
+  --panel-2: #252836;
+  --ink: #e9eaf0;
+  --muted: #9aa0b4;
+  --line: #333749;
+  --accent: #7aa2ff;
+  --good: #57d38c;
+  --bad: #ff6b81;
+  --warn: #ffc86b;
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f7fb;
+    --panel: #ffffff;
+    --panel-2: #eef0f7;
+    --ink: #1b1d26;
+    --muted: #666d84;
+    --line: #dcdfeb;
+    --accent: #3563e9;
+    --good: #12855a;
+    --bad: #cf2740;
+    --warn: #9a6b00;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Japanese text wants a taller line and a font stack that won't fall back to
+   Chinese glyph shapes. */
+[lang="ja"], .target, .diff, .jp {
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+               "Yu Gothic", Meiryo, system-ui, sans-serif;
+  line-height: 1.9;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.bar h1 { font-size: 17px; margin: 0; letter-spacing: .02em; }
+.bar .sub { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+.stats { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+main { max-width: 680px; margin: 0 auto; padding: 24px 20px 80px; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px;
+}
+.card.done { text-align: center; }
+
+/* --- speed meter --- */
+.speedrow { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.speed { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; min-width: 74px; }
+.track { flex: 1; height: 6px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
+.fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width .28s ease; }
+.streak { color: var(--muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* --- play --- */
+.play {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 26px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.play:hover { border-color: var(--accent); }
+.play .glyph { font-size: 20px; color: var(--accent); }
+.play.playing .glyph { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+.src { text-align: center; margin: 8px 0 0; font-size: 12px; min-height: 1.2em; }
+
+textarea {
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px;
+  font: inherit;
+  font-size: 19px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  resize: vertical;
+}
+textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* --- buttons --- */
+.row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.row.end { justify-content: flex-end; }
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 11px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.ghost { background: transparent; }
+button.danger { background: transparent; color: var(--bad); border-color: var(--bad); }
+
+kbd {
+  font: inherit;
+  font-size: 11px;
+  opacity: .65;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-left: 6px;
+}
+
+/* --- reveal --- */
+.reveal { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+.verdict { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+.verdict.hit { color: var(--good); }
+.verdict.miss { color: var(--bad); }
+.verdict.near { color: var(--warn); }
+
+.target { font-size: 24px; margin-bottom: 10px; }
+.diff { font-size: 19px; margin-bottom: 12px; }
+.diff .add { color: var(--bad); text-decoration: line-through; text-decoration-thickness: 1px; }
+.diff .del { color: var(--good); background: color-mix(in srgb, var(--good) 16%, transparent); border-radius: 3px; }
+.diff .same { opacity: .55; }
+
+.legend { font-size: 12px; margin: 0 0 10px; }
+.legend .del, .legend .add { font-weight: 600; }
+
+.translation { font-size: 14px; }
+.muted { color: var(--muted); }
+.error { color: var(--bad); text-align: center; }
+
+/* --- dialog --- */
+dialog {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px;
+  max-width: 540px;
+  width: calc(100% - 40px);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+dialog h2 { margin: 0 0 6px; font-size: 17px; }
+dialog textarea { font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
