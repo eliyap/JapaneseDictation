@@ -231,3 +231,51 @@ test("settings round-trip", async () => {
   assert.equal(other.getSetting("scheduler"), "sm2");
   assert.equal(other.getSetting("nope"), null);
 });
+
+test("overlapping flushes are serialized, not raced into a false conflict", async () => {
+  // Backgrounding a phone fires visibilitychange and pagehide together, and
+  // both flush. Before serialization the second sent the sha the first had
+  // already invalidated, and GitHub rejected it as a conflict.
+  const gh = fakeGitHub();
+  const store = makeStore(gh);
+  await store.load();
+  store.upsertSentence(sentence("s1", "一"));
+
+  const results = await Promise.all([store.flush(), store.flush(), store.flush()]);
+
+  assert.equal(results.filter((r) => r.pushed).length, 1, "exactly one push happens");
+  assert.equal(results.filter((r) => !r.pushed).length, 2, "the rest find nothing to do");
+  assert.equal(store.isDirty(), false);
+});
+
+test("a first-run create is not raced into a duplicate create", async () => {
+  // With no file yet the sha is null, so two concurrent PUTs would both be
+  // creates and the loser would 422.
+  const gh = fakeGitHub();
+  const store = makeStore(gh);
+  await store.load();
+  store.upsertSentence(sentence("s1", "一"));
+
+  await Promise.all([store.flush(), store.flush()]);
+  assert.ok(gh.files.has(PATH));
+
+  const puts = gh.calls.filter((c) => c.method === "PUT");
+  assert.equal(puts.length, 1, "only one PUT is sent");
+});
+
+test("a rejected flush does not wedge later flushes", async () => {
+  const gh = fakeGitHub();
+  const store = makeStore(gh);
+  await store.load();
+  store.upsertSentence(sentence("s1", "一"));
+  await store.flush();
+
+  await remoteWrite(gh, PATH, (db) => db.upsertSentence(sentence("remote", "x")));
+  store.upsertSentence(sentence("s2", "二"));
+  await assert.rejects(() => store.flush());
+
+  // The queue must still work afterwards.
+  await store.load();
+  store.upsertSentence(sentence("s3", "三"));
+  assert.equal((await store.flush()).pushed, true);
+});

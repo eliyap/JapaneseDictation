@@ -163,9 +163,21 @@ async function play() {
   $("playLabel").textContent = app.player.hasAudio ? "Playing" : "Generating…";
   try {
     await app.player.play(cur.sentence, cur.state.speed);
-    note(app.player.usingFallback ? "device voice (ElevenLabs unavailable)" : "", false);
+    // Say why we fell back, not just that we did -- the reason is the only
+    // thing that tells you whether it is fixable.
+    note(app.player.usingFallback
+      ? `Device voice — ${app.player.lastError?.message ?? "ElevenLabs unavailable"}`
+      : "", app.player.usingFallback);
   } catch (e) {
-    note(e.message, true);
+    // Browsers refuse to make noise until the user has interacted with the
+    // page, so the first autoplay of a session is expected to fail -- and on
+    // mobile it is the very first thing that happens.
+    if (e?.name === "NotAllowedError" || /not-allowed|NotAllowedError/i.test(e.message ?? "")) {
+      note("Tap Play — your browser blocks audio until you interact with the page", false);
+    } else {
+      const prefix = app.player.usingFallback ? "Device voice failed too — " : "";
+      note(prefix + e.message, true);
+    }
   } finally {
     app.busy = false;
     $("play").classList.remove("playing");

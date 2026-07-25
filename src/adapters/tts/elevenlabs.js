@@ -100,11 +100,11 @@ async function toTtsError(res) {
   const code = typeof detail === "object" ? detail?.status ?? detail?.code : null;
   const raw = typeof detail === "string" ? detail : detail?.message ?? "";
 
-  const explain = {
+  const byCode = {
     detected_unusual_activity:
-      "ElevenLabs has disabled free-tier access for this account, usually because " +
-      "requests arrived from a VPN, proxy or datacenter IP. Use a normal network " +
-      "connection, or upgrade the account to a paid plan.",
+      "ElevenLabs has disabled free-tier access for this account. It is triggered by " +
+      "requests from a VPN, proxy or datacenter IP, and by having multiple free " +
+      "accounts — and once set, it stays set until the account is on a paid plan.",
     missing_permissions:
       "This API key lacks a permission the request needs. Edit the key in the " +
       "ElevenLabs dashboard and grant it.",
@@ -113,9 +113,20 @@ async function toTtsError(res) {
     invalid_api_key: "ElevenLabs rejected this API key.",
   }[code];
 
-  return new TtsError(explain ?? raw ?? `ElevenLabs request failed (HTTP ${res.status})`, {
-    status: res.status,
-    code,
-    retryable: res.status === 429 || res.status >= 500,
-  });
+  // 402 arrives with varying bodies, so fall back to the status. It always
+  // means the same thing: this account cannot make the request without paying.
+  const byStatus =
+    res.status === 402
+      ? "ElevenLabs requires a paid subscription for this request — the account's " +
+        "free tier is disabled or out of quota. No API key or app setting fixes this."
+      : null;
+
+  return new TtsError(
+    byCode ?? byStatus ?? raw ?? `ElevenLabs request failed (HTTP ${res.status})`,
+    {
+      status: res.status,
+      code,
+      retryable: res.status === 429 || res.status >= 500,
+    },
+  );
 }

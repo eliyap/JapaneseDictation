@@ -98,8 +98,13 @@ main { max-width: 620px; margin: 0 auto; padding: 16px; }
 .play.playing .glyph { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
 
-.note { text-align: center; font-size: 13px; color: var(--muted); margin: -8px 0 0; min-height: 1.3em; }
-.note.err { color: var(--bad); }
+/* Wraps rather than truncates: when this holds a provider error, the tail of
+   the sentence is usually the actionable part. */
+.note {
+  text-align: center; font-size: 13px; color: var(--muted);
+  margin: -8px 0 0; min-height: 1.3em; line-height: 1.45;
+}
+.note.err { color: var(--warn); }
 
 .answer { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
 .answer .jp { font-size: 26px; margin: 0; }

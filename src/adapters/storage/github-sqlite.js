@@ -33,6 +33,7 @@ export class GitHubSqliteStore {
   #sha = null;
   #dirty = false;
   #path = DEFAULT_PATH;
+  #queue = Promise.resolve();
 
   /**
    * @param {{ owner: string, repo: string, branch?: string, token: string,
@@ -67,8 +68,25 @@ export class GitHubSqliteStore {
     return { existed: Boolean(found) };
   }
 
-  /** Push local changes. No-op when nothing has changed. */
-  async flush({ message } = {}) {
+  /**
+   * Push local changes. No-op when nothing has changed.
+   *
+   * Serialized: `#sha` is only updated once a PUT resolves, so two overlapping
+   * flushes would both send the sha they read beforehand and the second would
+   * be rejected as a conflict against the first. That is easy to trigger --
+   * backgrounding a phone fires `visibilitychange` and `pagehide` together,
+   * and both flush. Queueing makes the second call see the updated sha, or
+   * find nothing left to do.
+   */
+  flush(opts = {}) {
+    const run = () => this.#flushOnce(opts);
+    const next = this.#queue.then(run, run);
+    // Keep the queue usable after a rejection; callers still see this one throw.
+    this.#queue = next.then(noop, noop);
+    return next;
+  }
+
+  async #flushOnce({ message } = {}) {
     if (!this.#dirty || !this.#db) return { pushed: false };
     this.onStatus({ state: "saving" });
 
@@ -153,6 +171,8 @@ export class GitHubSqliteStore {
     return this.#read().countReviews();
   }
 }
+
+function noop() {}
 
 export function newId() {
   return globalThis.crypto?.randomUUID

@@ -26,12 +26,16 @@ const page = await context.newPage();
 
 const problems = [];
 page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
+// Set while the outage section is deliberately making requests fail.
+let expectingProviderErrors = false;
+
 page.on("console", (m) => {
   if (m.type() !== "error") return;
   // The very first load asks GitHub for a database that does not exist yet.
   // That 404 is a designed, handled state, but the browser still logs the
   // failed request -- so it is not evidence of a bug.
   if (/404/.test(m.text())) return;
+  if (expectingProviderErrors && /40\d/.test(m.text())) return;
   problems.push(`console: ${m.text()}`);
 });
 
@@ -215,6 +219,36 @@ assert.ok(subs.some((s) => s.includes("70%")), `a miss slowed a card down: ${JSO
 // Read the playback record before the reload below wipes it (addInitScript
 // re-runs on every navigation, so the array starts empty again).
 const plays = await page.evaluate(() => window.__plays);
+
+// --- a provider outage must explain itself --------------------------------
+// The deployed app hit HTTP 402 and showed only "device voice unavailable",
+// which is exactly the moment the reason matters most.
+expectingProviderErrors = true;
+await page.unroute("**://api.elevenlabs.io/**");
+await page.route("**://api.elevenlabs.io/**", (r) =>
+  r.fulfill({ status: 402, contentType: "application/json", body: '{"detail":{"message":"Payment required"}}' }));
+
+// Advance to a card whose audio is not already in memory -- otherwise Play
+// reuses the cached blob and never reaches the provider at all.
+await tab("review");
+await page.click("#reveal");
+await page.click("#right");
+await page.waitForFunction(
+  () => /paid subscription/.test(document.querySelector("#playNote")?.textContent ?? ""),
+  null, { timeout: 15000 },
+);
+const outageNote = await page.locator("#playNote").innerText();
+// Headless has no usable system voice, so this exercises the "fallback failed
+// too" branch; either way the message must name the fallback and the cause.
+assert.ok(/Device voice/i.test(outageNote), `names the fallback: ${outageNote}`);
+assert.ok(/free tier is disabled or out of quota/.test(outageNote), `names the cause: ${outageNote}`);
+
+await page.unroute("**://api.elevenlabs.io/**");
+await page.route("**://api.elevenlabs.io/**", (r) => {
+  ttsCalls++;
+  return r.fulfill({ status: 200, contentType: "audio/mpeg", body: SILENT_MP3 });
+});
+expectingProviderErrors = false;
 
 // --- sync -----------------------------------------------------------------
 await tab("settings");

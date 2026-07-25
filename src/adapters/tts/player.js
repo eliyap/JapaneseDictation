@@ -20,6 +20,8 @@ export class Player {
     this.tts = tts;
     this.fallback = fallback;
     this.usingFallback = false;
+    /** Why the provider failed, when playback fell back. @type {Error|null} */
+    this.lastError = null;
   }
 
   setProvider(tts) {
@@ -49,13 +51,25 @@ export class Player {
       this.#inflight = null;
       this.#key = null;
       if (this.fallback?.available?.()) {
+        // Keep going so the session is not blocked, but hold on to why. Losing
+        // the reason here is worse than the outage: the user sees a robot voice
+        // and no explanation for it.
         this.usingFallback = true;
-        return this.fallback.speak(sentence.text, rate);
+        this.lastError = e;
+        try {
+          return await this.fallback.speak(sentence.text, rate);
+        } catch {
+          // Report why the real provider failed, not why the fallback did.
+          // "ElevenLabs needs a paid plan" is actionable; "speech synthesis
+          // not-allowed" sends you chasing the wrong problem.
+          throw e;
+        }
       }
       throw e;
     }
 
     this.usingFallback = false;
+    this.lastError = null;
     return this.#playCurrent(rate);
   }
 

@@ -121,3 +121,23 @@ test("listVoices maps the v2 response shape", async () => {
   const tts = createElevenLabs({ apiKey: "k", fetchImpl });
   assert.deepEqual(await tts.listVoices(), [{ id: "v1", name: "Aoi", category: "cloned" }]);
 });
+
+test("HTTP 402 is explained as a subscription problem", async () => {
+  // What the deployed app actually hit. The body varies, so the status has to
+  // carry the diagnosis on its own.
+  for (const detail of [null, { message: "Payment required" }, "Payment Required"]) {
+    const { fetchImpl } = fakeFetch(() => errorResponse(402, detail));
+    const tts = createElevenLabs({ apiKey: "k", fetchImpl });
+    await assert.rejects(
+      () => tts.synthesize("テスト", {}),
+      (e) => /paid subscription/.test(e.message) && e.retryable === false,
+      `402 with detail ${JSON.stringify(detail)}`,
+    );
+  }
+});
+
+test("a known error code still wins over the status fallback", async () => {
+  const { fetchImpl } = fakeFetch(() => errorResponse(402, { status: "quota_exceeded" }));
+  const tts = createElevenLabs({ apiKey: "k", fetchImpl });
+  await assert.rejects(() => tts.synthesize("テスト", {}), /out of characters/);
+});
